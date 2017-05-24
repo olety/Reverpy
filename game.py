@@ -55,6 +55,9 @@ class TileType(IntEnum):
 
 
 class Player:
+    INFINITY = 1000000
+    MINUS_INFINITY = -1000000
+
     @property
     def computer(self):
         return self.type == PlayerType.COMPUTER
@@ -83,7 +86,7 @@ class Player:
         elif self.aitype == AiType.MINMAX:
             return self.minmax_move(board, max_depth=3)
         elif self.aitype == AiType.ABETA:
-            return self.abeta_move(board, max_depth=3)
+            return self.abeta_move(board, max_depth=5)
 
     def minmax_move(self, board, max_depth):
         score, x, y = self.minmax(board, tiletype=self.tiletype,
@@ -97,7 +100,7 @@ class Player:
         if not legal_moves:
             return board.get_score_heuristic_(tiletype),
         if tiletype == self.tiletype:  # Maximizing
-            best_score = -1000000
+            best_score = self.MINUS_INFINITY
             for x, y in legal_moves:
                 if board.calc_move_(x, y, tiletype):
                     score = self.minmax(board, tiletype.inverse,
@@ -108,7 +111,7 @@ class Player:
                 else:
                     return board.get_score_heuristic_(tiletype),
         else:  # Minimizing
-            best_score = 1000000
+            best_score = self.INFINITY
             for x, y in legal_moves:
                 if board.calc_move_(x, y, tiletype):
                     score = self.minmax(board, tiletype.inverse,
@@ -123,7 +126,7 @@ class Player:
     def abeta_move(self, board, max_depth):
         score, x, y = self.abeta(board, tiletype=self.tiletype,
                                  curr_depth=1, max_depth=max_depth,
-                                 a=-1000000, b=1000000)
+                                 a=self.MINUS_INFINITY, b=self.INFINITY)
         return Move(self, x, y)
 
     def abeta(self, board, tiletype, curr_depth, max_depth, a, b):
@@ -133,7 +136,7 @@ class Player:
         if not legal_moves:
             return board.get_score_heuristic_(tiletype),
         if tiletype == self.tiletype:  # Maximizing
-            best_score = -1000000
+            best_score = self.MINUS_INFINITY
             for x, y in legal_moves:
                 if board.calc_move_(x, y, tiletype):
                     score = self.abeta(board, tiletype.inverse,
@@ -143,11 +146,11 @@ class Player:
                         best_score, best_x, best_y = score, x, y
                     a = max(a, best_score)
                     if b <= a:
-                        continue  # B cut-off
+                        break  # continue  # B cut-off
                 else:
                     return board.get_score_heuristic_(tiletype),
         else:  # Minimizing
-            best_score = 1000000
+            best_score = self.INFINITY
             for x, y in legal_moves:
                 if board.calc_move_(x, y, tiletype):
                     score = self.abeta(board, tiletype.inverse,
@@ -157,7 +160,7 @@ class Player:
                         best_score, best_x, best_y = score, x, y
                     b = min(b, best_score)
                     if b <= a:
-                        continue  # A cut-off
+                        break  # continue  # A cut-off
                 else:
                     return board.get_score_heuristic_(tiletype),
         return best_score, best_x, best_y
@@ -201,6 +204,7 @@ class Board:
     MOVE_DIRECTIONS = [(0, 1), (1, 1), (1, 0), (1, -1),
                        (0, -1), (-1, -1), (-1, 0), (-1, 1)]
 
+    # http://www.riscos.com/support/developers/agrm/chap09.htm
     SCOREBOARD = (
         (7, 2, 5, 4, 4, 5, 2, 7),
         (2, 1, 3, 3, 3, 3, 1, 2),
@@ -253,10 +257,10 @@ class Board:
 
     def get_score_heuristic_(self, tiletype):
         # Determine the score by counting the tiles
-        score = 0
         # for x in np.nditer(self.board):
         #     if x == tiletype:
         #         score += 1
+        score = 0
         for x in range(self.rows):
             for y in range(self.cols):
                 if self.board[x][y] == tiletype:
@@ -651,6 +655,7 @@ class Game:
                 self._update_draws()
 
                 response = self._handle_processing()
+
                 if not response:
                     return True
                 chosen_move = Move(self.current_turn, *response)
@@ -774,16 +779,16 @@ class Game:
                                           y - height / 2,
                                           y + height / 2)
         if x_start < mouse[0] < x_end and y_start < mouse[1] < y_end:
-            pygame.draw.rect(self.displaysurf, color_rect_active,
-                             (x_start, y_start, width, height))
+            rect = pygame.draw.rect(self.displaysurf, color_rect_active,
+                                    (x_start, y_start, width, height))
         else:
-            pygame.draw.rect(self.displaysurf, color_rect_inactive,
-                             (x_start, y_start, width, height))
+            rect = pygame.draw.rect(self.displaysurf, color_rect_inactive,
+                                    (x_start, y_start, width, height))
 
         surf = self.font.render(msg, True, color_text)
-        rect = surf.get_rect()
-        rect.center = (x, y)
-        self.displaysurf.blit(surf, rect)
+        rect1 = surf.get_rect()
+        rect1.center = (x, y)
+        self.displaysurf.blit(surf, rect1)
         return rect
 
     def _draw_button_naive(self, msg, x, y, width, height,
@@ -791,16 +796,16 @@ class Game:
                            color_text):
         x_start, y_start = (x - width / 2, y - height / 2)
         if self.computer.aitype == AiType.NAIVE:
-            pygame.draw.rect(self.displaysurf, color_rect_active,
-                             (x_start, y_start, width, height))
+            rect = pygame.draw.rect(self.displaysurf, color_rect_active,
+                                    (x_start, y_start, width, height))
         else:
-            pygame.draw.rect(self.displaysurf, color_rect_inactive,
-                             (x_start, y_start, width, height))
+            rect = pygame.draw.rect(self.displaysurf, color_rect_inactive,
+                                    (x_start, y_start, width, height))
 
         surf = self.font.render(msg, True, color_text)
-        rect = surf.get_rect()
-        rect.center = (x, y)
-        self.displaysurf.blit(surf, rect)
+        rect1 = surf.get_rect()
+        rect1.center = (x, y)
+        self.displaysurf.blit(surf, rect1)
         return rect
 
     def _draw_button_minmax(self, msg, x, y, width, height,
@@ -808,16 +813,16 @@ class Game:
                             color_text):
         x_start, y_start = (x - width / 2, y - height / 2)
         if self.computer.aitype == AiType.MINMAX:
-            pygame.draw.rect(self.displaysurf, color_rect_active,
-                             (x_start, y_start, width, height))
+            rect = pygame.draw.rect(self.displaysurf, color_rect_active,
+                                    (x_start, y_start, width, height))
         else:
-            pygame.draw.rect(self.displaysurf, color_rect_inactive,
-                             (x_start, y_start, width, height))
+            rect = pygame.draw.rect(self.displaysurf, color_rect_inactive,
+                                    (x_start, y_start, width, height))
 
         surf = self.font.render(msg, True, color_text)
-        rect = surf.get_rect()
-        rect.center = (x, y)
-        self.displaysurf.blit(surf, rect)
+        rect1 = surf.get_rect()
+        rect1.center = (x, y)
+        self.displaysurf.blit(surf, rect1)
         return rect
 
     def _draw_button_abeta(self, msg, x, y, width, height,
@@ -825,16 +830,16 @@ class Game:
                            color_text):
         x_start, y_start = (x - width / 2, y - height / 2)
         if self.computer.aitype == AiType.ABETA:
-            pygame.draw.rect(self.displaysurf, color_rect_active,
-                             (x_start, y_start, width, height))
+            rect = pygame.draw.rect(self.displaysurf, color_rect_active,
+                                    (x_start, y_start, width, height))
         else:
-            pygame.draw.rect(self.displaysurf, color_rect_inactive,
-                             (x_start, y_start, width, height))
+            rect = pygame.draw.rect(self.displaysurf, color_rect_inactive,
+                                    (x_start, y_start, width, height))
 
         surf = self.font.render(msg, True, color_text)
-        rect = surf.get_rect()
-        rect.center = (x, y)
-        self.displaysurf.blit(surf, rect)
+        rect1 = surf.get_rect()
+        rect1.center = (x, y)
+        self.displaysurf.blit(surf, rect1)
         return rect
 
     def _draw_board(self):
