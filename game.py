@@ -83,39 +83,84 @@ class Player:
         elif self.aitype == AiType.MINMAX:
             return self.minmax_move(board, max_depth=3)
         elif self.aitype == AiType.ABETA:
-            return self.abeta_move(board)
+            return self.abeta_move(board, max_depth=3)
 
-    def minmax_move(self, board, max_depth=5):
-        score, move = self.minmax(board, person=self,
-                                  curr_depth=0, max_depth=max_depth)
-        return move
+    def minmax_move(self, board, max_depth):
+        score, x, y = self.minmax(board, tiletype=self.tiletype,
+                                  curr_depth=1, max_depth=max_depth)
+        return Move(self, x, y)
 
-    def minmax(self, board, person, curr_depth, max_depth=5):
+    def minmax(self, board, tiletype, curr_depth, max_depth):
         if curr_depth >= max_depth:
-            return board.get_score_heuristic(person),
-        legal_moves = board.get_legal_moves(person)
+            return board.get_score_heuristic_(tiletype),
+        legal_moves = board.get_legal_moves_pos_(tiletype)
         if not legal_moves:
-            return board.get_score_heuristic(person),
-        if person == self:  # Maximizing
-            best_score, best_move = -1000000, None
-            for move in legal_moves:
-                board.calc_move(move)
-                score = self.minmax(board, self.opponent, curr_depth + 1)[0]
-                board.undo_last()
-                if score > best_score:
-                    best_score, best_move = score, move
+            return board.get_score_heuristic_(tiletype),
+        if tiletype == self.tiletype:  # Maximizing
+            best_score = -1000000
+            for x, y in legal_moves:
+                if board.calc_move_(x, y, tiletype):
+                    score = self.minmax(board, tiletype.inverse,
+                                        curr_depth + 1, max_depth)[0]
+                    board.undo_last()
+                    if score > best_score:
+                        best_score, best_x, best_y = score, x, y
+                else:
+                    return board.get_score_heuristic_(tiletype),
         else:  # Minimizing
-            best_score, best_move = 1000000, None
-            for move in legal_moves:
-                board.calc_move(move)
-                score = self.minmax(board, self, curr_depth + 1)[0]
-                board.undo_last()
-                if score < best_score:
-                    best_score, best_move = score, move
-        return best_score, best_move
+            best_score = 1000000
+            for x, y in legal_moves:
+                if board.calc_move_(x, y, tiletype):
+                    score = self.minmax(board, tiletype.inverse,
+                                        curr_depth + 1, max_depth)[0]
+                    board.undo_last()
+                    if score < best_score:
+                        best_score, best_x, best_y = score, x, y
+                else:
+                    return board.get_score_heuristic_(tiletype),
+        return best_score, best_x, best_y
 
-    def abeta_move(self, board):
-        pass
+    def abeta_move(self, board, max_depth):
+        score, x, y = self.abeta(board, tiletype=self.tiletype,
+                                 curr_depth=1, max_depth=max_depth,
+                                 a=-1000000, b=1000000)
+        return Move(self, x, y)
+
+    def abeta(self, board, tiletype, curr_depth, max_depth, a, b):
+        if curr_depth >= max_depth:
+            return board.get_score_heuristic_(tiletype),
+        legal_moves = board.get_legal_moves_pos_(tiletype)
+        if not legal_moves:
+            return board.get_score_heuristic_(tiletype),
+        if tiletype == self.tiletype:  # Maximizing
+            best_score = -1000000
+            for x, y in legal_moves:
+                if board.calc_move_(x, y, tiletype):
+                    score = self.abeta(board, tiletype.inverse,
+                                       curr_depth + 1, max_depth, a, b)[0]
+                    board.undo_last()
+                    if score > best_score:
+                        best_score, best_x, best_y = score, x, y
+                    a = max(a, best_score)
+                    if b <= a:
+                        continue  # B cut-off
+                else:
+                    return board.get_score_heuristic_(tiletype),
+        else:  # Minimizing
+            best_score = 1000000
+            for x, y in legal_moves:
+                if board.calc_move_(x, y, tiletype):
+                    score = self.abeta(board, tiletype.inverse,
+                                       curr_depth + 1, max_depth, a, b)[0]
+                    board.undo_last()
+                    if score < best_score:
+                        best_score, best_x, best_y = score, x, y
+                    b = min(b, best_score)
+                    if b <= a:
+                        continue  # A cut-off
+                else:
+                    return board.get_score_heuristic_(tiletype),
+        return best_score, best_x, best_y
 
     def naive_move(self, board):
         if self.person:
@@ -156,6 +201,17 @@ class Board:
     MOVE_DIRECTIONS = [(0, 1), (1, 1), (1, 0), (1, -1),
                        (0, -1), (-1, -1), (-1, 0), (-1, 1)]
 
+    SCOREBOARD = (
+        (7, 2, 5, 4, 4, 5, 2, 7),
+        (2, 1, 3, 3, 3, 3, 1, 2),
+        (5, 3, 6, 5, 5, 6, 3, 5),
+        (4, 3, 5, 6, 6, 5, 3, 4),
+        (4, 3, 5, 6, 6, 5, 3, 4),
+        (5, 3, 6, 5, 5, 6, 3, 3),
+        (2, 1, 3, 3, 3, 3, 1, 2),
+        (7, 2, 5, 4, 4, 5, 2, 7),
+    )  # , dtype=np.dtype('int8'))
+
     @property
     def cols(self):
         return self.board.shape[1]
@@ -175,7 +231,7 @@ class Board:
             self.board = board
         else:
             self.board = np.full((rows, cols), TileType.EMPTY,
-                                 dtype=np.dtype('int'))
+                                 dtype=np.dtype('uint8'))
         self.flips = []
         self.moves = []
 
@@ -195,6 +251,19 @@ class Board:
                 score += 1
         return score
 
+    def get_score_heuristic_(self, tiletype):
+        # Determine the score by counting the tiles
+        score = 0
+        # for x in np.nditer(self.board):
+        #     if x == tiletype:
+        #         score += 1
+        for x in range(self.rows):
+            for y in range(self.cols):
+                if self.board[x][y] == tiletype:
+                    score += self.SCOREBOARD[x][y]
+
+        return score
+
     def _check_bounds(self, x, y):
         # Check whether the x,y coords are inside the board
         return x >= 0 and y >= 0 and x < self.cols and y < self.rows
@@ -203,6 +272,11 @@ class Board:
         # Check the bounds and whether the cell is not occupied
         return (self._check_bounds(move.x, move.y) and
                 self.board[move.x][move.y] == TileType.EMPTY)
+
+    def _check_move_legality_(self, x, y):
+        # Check the bounds and whether the cell is not occupied
+        return (self._check_bounds(x, y) and
+                self.board[x][y] == TileType.EMPTY)
 
     def _check_corner(self, x, y):
         # Check whether the x,y coords are on the corner of the board
@@ -214,6 +288,7 @@ class Board:
     def check_move(self, move):
         # Do a basic check on whether the move is legal
         # then calculate the flips and return the flipped pieces
+        # print(move.x, move.y, move.player.tiletype)
         if not self._check_move_legality(move):
             return None
         # Starting the simulation of the move
@@ -227,7 +302,7 @@ class Board:
                 # The neighbour has another color
                 # Since we checked the x,y we might as well finish this iteration
                 # It leads to worse looking code but better performance
-                x, y = move.x + xdir, move.y + ydir
+                x, y = x + xdir, y + ydir
                 # We won't have our color outside of the board
                 if not self._check_bounds(x, y):
                     continue  # The for loop
@@ -251,6 +326,56 @@ class Board:
                         flips.append([x, y])
         # Revert the cell to the original state
         self.board[move.x][move.y] = TileType.EMPTY
+        # self._print_board()
+        # print(flips, end='\n\n\n')
+        return flips  # return flips, check for None/empty list on the other side
+
+    def _print_board(self):
+        for x in range(self.board.shape[0]):
+            for y in range(self.board.shape[1]):
+                print(self.board[x][y], end='')
+            print()
+
+    def check_move_(self, move_x, move_y, tiletype):
+        # Do a basic check on whether the move is legal
+        # then calculate the flips and return the flipped pieces
+        if not self._check_move_legality_(move_x, move_y):
+            return None
+        # Starting the simulation of the move
+        # First, we add the temp tile to the board
+        self.board[move_x][move_y] = tiletype
+        # Then, for each possible direction we calculate captured tiles (flips)
+        flips = []
+        for xdir, ydir in self.MOVE_DIRECTIONS:
+            x, y = move_x + xdir, move_y + ydir
+            if self._check_bounds(x, y) and self.board[x][y] == tiletype.inverse:
+                # The neighbour has another color
+                # Since we checked the x,y we might as well finish this iteration
+                # It leads to worse looking code but better performance
+                x, y = x + xdir, y + ydir
+                # We won't have our color outside of the board
+                if not self._check_bounds(x, y):
+                    continue  # The for loop
+                while self._check_bounds(x, y) and self.board[x][y] == tiletype.inverse:
+                    x, y = x + xdir, y + ydir
+                    if not self._check_bounds(x, y):
+                        break  # The while loop
+                if not self._check_bounds(x, y):
+                    continue  # The for loop
+                # We have to check it because blank tiles exist
+                if self.board[x][y] == tiletype:
+                    # We now know that we have some tiles to flip
+                    # We can move backwards and add them to the list
+                    # Our current tile has the same color, so substract 1st
+                    while True:
+                        x, y = x - xdir, y - ydir
+                        # We have to have a while true/break
+                        # to avoid adding the original tile
+                        if x == move_x and y == move_y:
+                            break
+                        flips.append([x, y])
+        # Revert the cell to the original state
+        self.board[move_x][move_y] = TileType.EMPTY
         return flips  # return flips, check for None/empty list on the other side
 
     def get_legal_moves(self, player):
@@ -268,6 +393,14 @@ class Board:
             pos.append((move.x, move.y))
         return pos
 
+    def get_legal_moves_pos_(self, tiletype):
+        pos = []
+        for x in range(self.cols):
+            for y in range(self.rows):
+                if self.check_move_(x, y, tiletype):
+                    pos.append([x, y])
+        return pos
+
     def reset_board(self):
         self.board.fill(TileType.EMPTY)
         # The game starts with 4 diagonally placed tiles
@@ -279,6 +412,7 @@ class Board:
         self.board[cols // 2][rows // 2 - 1] = TileType.BLACK
 
     def calc_move(self, move):
+
         flips = self.check_move(move)
         if not flips:
             return None
@@ -289,16 +423,37 @@ class Board:
             self.board[x][y] = move.player.tiletype
 
         self.flips.append(flips)
-        self.moves.append(move)
+        self.moves.append([move.x, move.y])
 
         return flips
 
+    def calc_move_(self, x, y, tiletype):
+        flips = self.check_move_(x, y, tiletype)
+        if not flips:
+            return None
+
+        self.board[x][y] = tiletype
+        self.moves.append([x, y])
+
+        for x, y in flips:
+            self.board[x][y] = tiletype
+        self.flips.append(flips)
+
+        # print(x, y, tiletype, flips, 'self', self.flips)
+        return flips
+
     def undo_last(self):
+        # print(self.flips, 'moves', self.moves)
         last_flips = self.flips.pop()
-        last_move = self.moves.pop()
-        self.board[last_move.x][last_move.y] = TileType.EMPTY
+        last_x, last_y = self.moves.pop()
+        # print('UNDOING', last_flips, 'X:', last_x, 'Y', last_y)
+        # self._print_board()
+        # print('AFTER')
+        # self._print_board()
+        # print(end='\n\n\n')
+        self.board[last_x][last_y] = TileType.EMPTY
         for x, y in last_flips:
-            self.board[x][y] = last_move.player.tiletype.inverse
+            self.board[x][y] = TileType(self.board[x][y]).inverse
 
 
 class Game:
@@ -523,11 +678,11 @@ class Game:
         self.displaysurf.blit(self.bg_img_pure, self.bg_img_pure.get_rect())
         # Determine the text of the message to display.
         if player_score > computer_score:
-            text = 'You beat the computer by %s points! Congratulations!' % \
-                   (player_score - computer_score)
+            text = 'You beat the computer by {0} points! Congratulations!'.format(
+                player_score - computer_score)
         elif player_score < computer_score:
-            text = 'You lost. The computer beat you by %s points.' % \
-                   (player_score - computer_score)
+            text = 'You lost. The computer beat you by {0} points.'.format(
+                computer_score - player_score)
         else:
             text = 'The game was a tie!'
 
@@ -762,7 +917,7 @@ class Game:
 
     def _select_player_tiletype(self):
         text_surf = self.font.render(
-            'Do you want to be white or black?', True, self.color_text, self.color_text_bg_1)
+            'Do you want to play as white or black?', True, self.color_text, self.color_text_bg_1)
         text_rect = text_surf.get_rect()
         text_rect.center = (int(self.wwidth / 2), int(self.wheight / 2))
 
