@@ -6,7 +6,7 @@
 
 This is a project done for the undergraduate course "Introduction to Artificial Intelligence" in Wrocław University of Science and Technology. The task was to make a "bot" that could outsmart a human in the game of Reversi (alt. name: Othello). 
 
-This repository implements three different solvers 
+This repository implements three different solvers:
 
 - **Naive** (Tries to go for a corner and then goes through every possible move)
 - [**MinMax** algorithm](https://en.wikipedia.org/wiki/Minimax)
